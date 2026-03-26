@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MORPHO-SHIELD — Cybersécurité Hospitalière</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#060a0f;--bg2:#0d1520;--bg3:#111d2e;--panel:#0a1628;
+  --border:#1a3a5c;--bord2:#0f2a44;
+  --teal:#00d4aa;--blue:#1e90ff;--red:#ff3b5c;
+  --amber:#ffb300;--green:#00e676;--purple:#b388ff;--lime:#c6ff00;
+  --gray:#4a6080;--text:#c8ddf0;--text2:#7a9bb8;--text3:#3a5a78;
+  --mono:'Share Tech Mono',monospace;--sans:'Rajdhani',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--bord2) 1px,transparent 1px),linear-gradient(90deg,var(--bord2) 1px,transparent 1px);background-size:40px 40px;opacity:.35;pointer-events:none;z-index:0;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.7)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes fadein{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@keyframes scanline{0%{top:-20%}100%{top:110%}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px rgba(0,212,170,.3)}50%{box-shadow:0 0 20px rgba(0,212,170,.7)}}
+
+/* Header */
+header{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:52px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;}
+.logo{display:flex;align-items:center;gap:12px;}
+.logo-mark{width:32px;height:32px;border:2px solid var(--teal);border-radius:5px;display:flex;align-items:center;justify-content:center;}
+.logo-mark::after{content:'';width:12px;height:12px;background:var(--teal);border-radius:2px;animation:pulse 2s ease-in-out infinite;}
+.logo-name{font-weight:700;font-size:18px;letter-spacing:3px;color:var(--teal);}
+.logo-sub{font-family:var(--mono);font-size:9px;color:var(--text2);letter-spacing:1px;}
+.header-right{display:flex;align-items:center;gap:16px;}
+.status-badge{font-family:var(--mono);font-size:11px;padding:4px 14px;border-radius:3px;border:1px solid;letter-spacing:1px;transition:all .4s;}
+.status-badge.idle{color:var(--text2);border-color:var(--gray);}
+.status-badge.running{color:var(--teal);border-color:var(--teal);background:rgba(0,212,170,.06);}
+.status-badge.alert{color:var(--red);border-color:var(--red);background:rgba(255,59,92,.08);animation:blink 1s step-end infinite;}
+.status-badge.trapped{color:var(--amber);border-color:var(--amber);background:rgba(255,179,0,.08);}
+.status-badge.neutralizing{color:var(--lime);border-color:var(--lime);background:rgba(198,255,0,.06);animation:glow 1.5s ease-in-out infinite;}
+.status-badge.neutralized{color:var(--green);border-color:var(--green);background:rgba(0,230,118,.08);}
+.clock{font-family:var(--mono);font-size:12px;color:var(--text2);}
+
+/* Controls */
+.controls{position:relative;z-index:10;display:flex;align-items:center;gap:10px;padding:8px 20px;background:var(--bg2);border-bottom:1px solid var(--bord2);flex-shrink:0;}
+.btn{font-family:var(--sans);font-weight:700;font-size:12px;letter-spacing:1.5px;padding:7px 20px;border-radius:3px;border:1px solid;cursor:pointer;transition:all .2s;text-transform:uppercase;}
+.btn-primary{background:rgba(0,212,170,.1);color:var(--teal);border-color:var(--teal);}
+.btn-primary:hover:not(:disabled){background:rgba(0,212,170,.22);}
+.btn-danger{background:rgba(255,59,92,.1);color:var(--red);border-color:var(--red);}
+.btn-danger:hover:not(:disabled){background:rgba(255,59,92,.22);}
+.btn-ghost{background:transparent;color:var(--text2);border-color:var(--gray);}
+.btn-ghost:hover{color:var(--text);border-color:var(--text2);}
+.btn:disabled{opacity:.3;cursor:not-allowed;}
+.train-wrap{display:flex;align-items:center;gap:10px;flex:1;max-width:320px;margin-left:8px;}
+.train-label{font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap;}
+.train-bar{flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+.train-fill{height:100%;width:0%;background:var(--teal);transition:width .5s;border-radius:2px;}
+
+/* Body: 5 columns */
+.body{flex:1;display:grid;grid-template-columns:200px 1fr 1fr 260px 260px;position:relative;z-index:1;overflow:hidden;}
+
+/* Guide */
+.guide-panel{background:var(--panel);border-right:1px solid var(--bord2);display:flex;flex-direction:column;overflow-y:auto;}
+.guide-panel::-webkit-scrollbar{width:3px;}
+.guide-panel::-webkit-scrollbar-thumb{background:var(--border);}
+.guide-title{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--text2);padding:12px 14px 8px;border-bottom:1px solid var(--bord2);text-transform:uppercase;}
+.step{padding:12px 14px;border-bottom:1px solid var(--bord2);transition:all .4s;border-left:3px solid transparent;}
+.step.active{background:rgba(0,212,170,.05);border-left-color:var(--teal);}
+.step.done{background:rgba(0,230,118,.03);border-left-color:var(--green);opacity:.65;}
+.step.pending{opacity:.3;}
+.step.neutralizing{background:rgba(198,255,0,.04);border-left-color:var(--lime);}
+.step.neutralized{background:rgba(0,230,118,.05);border-left-color:var(--green);}
+.step-num{font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:3px;letter-spacing:1px;}
+.step-title{font-weight:700;font-size:12px;color:var(--text);margin-bottom:4px;}
+.step.active .step-title{color:var(--teal);}
+.step.done .step-title,.step.neutralized .step-title{color:var(--green);}
+.step.neutralizing .step-title{color:var(--lime);}
+.step-desc{font-family:var(--mono);font-size:9px;color:var(--text2);line-height:1.7;}
+.step-action{margin-top:6px;font-family:var(--mono);font-size:9px;color:var(--amber);}
+
+/* Traffic columns */
+.traffic-col{display:flex;flex-direction:column;border-right:1px solid var(--bord2);overflow:hidden;}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg3);border-bottom:1px solid var(--bord2);flex-shrink:0;}
+.panel-title{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--text2);display:flex;align-items:center;gap:7px;}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--gray);}
+.dot.green{background:var(--green);box-shadow:0 0 6px var(--green);}
+.dot.red{background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 1s step-end infinite;}
+.dot.amber{background:var(--amber);box-shadow:0 0 6px var(--amber);}
+.dot.lime{background:var(--lime);box-shadow:0 0 8px var(--lime);animation:blink .8s step-end infinite;}
+.dot.done-green{background:var(--green);box-shadow:0 0 10px var(--green);}
+.panel-count{font-family:var(--mono);font-size:10px;color:var(--text3);}
+.stat-bar{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--bord2);flex-shrink:0;}
+.stat-item{padding:7px 14px;border-right:1px solid var(--bord2);}
+.stat-item:last-child{border-right:none;}
+.stat-lbl{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;}
+.stat-val{font-family:var(--mono);font-size:18px;}
+.stat-val.teal{color:var(--teal);}.stat-val.red{color:var(--red);}
+.stat-val.amber{color:var(--amber);}.stat-val.green{color:var(--green);}
+.stat-val.lime{color:var(--lime);}.stat-val.purple{color:var(--purple);}
+.feed{flex:1;overflow-y:auto;}
+.feed::-webkit-scrollbar{width:3px;}
+.feed::-webkit-scrollbar-thumb{background:var(--border);}
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:6px;font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;}
+.alert-strip{display:none;padding:7px 14px;background:rgba(255,59,92,.08);border-top:1px solid rgba(255,59,92,.4);font-family:var(--mono);font-size:10px;color:var(--red);flex-shrink:0;}
+.alert-strip.show{display:block;animation:fadein .4s;}
+.phase-strip{padding:5px 14px;background:rgba(255,59,92,.06);border-top:1px dashed rgba(255,59,92,.3);border-bottom:1px dashed rgba(255,59,92,.3);font-family:var(--mono);font-size:10px;color:var(--red);letter-spacing:1px;text-align:center;animation:fadein .3s;}
+.ev-row{display:grid;grid-template-columns:44px 1fr 1fr 50px 66px;align-items:center;gap:5px;padding:4px 14px;border-bottom:1px solid rgba(26,58,92,.3);font-family:var(--mono);font-size:10px;animation:fadein .3s;}
+.ev-row:hover{background:rgba(0,212,170,.02);}
+.ev-row.atk{background:rgba(255,59,92,.04);}
+.ev-row.hp{background:rgba(255,179,0,.04);}
+.ev-port{color:var(--blue);}.ev-src{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ev-dst{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ev-bytes{color:var(--text3);text-align:right;}
+.score-pill{font-size:9px;padding:2px 5px;border-radius:2px;text-align:center;}
+.ok{background:rgba(0,230,118,.1);color:var(--green);}
+.bad{background:rgba(255,59,92,.15);color:var(--red);}
+.hp-tag{background:rgba(255,179,0,.12);color:var(--amber);}
+.na{background:rgba(74,96,128,.2);color:var(--text3);}
+
+/* Honeypot panel */
+.hp-panel{background:var(--panel);display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--bord2);}
+.hp-feed{flex:1;overflow-y:auto;}
+.hp-feed::-webkit-scrollbar{width:3px;}
+.hp-feed::-webkit-scrollbar-thumb{background:var(--border);}
+.hp-inactive{display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;gap:8px;}
+.hp-inactive-ring{width:48px;height:48px;border:2px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px;}
+.hp-inactive-txt{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;line-height:1.8;}
+.iso-bar{display:none;padding:7px 14px;background:rgba(0,230,118,.05);border-bottom:1px solid rgba(0,230,118,.2);font-family:var(--mono);font-size:10px;color:var(--green);flex-shrink:0;}
+.iso-bar.show{display:block;animation:fadein .4s;}
+.cmd-block{padding:9px 14px;border-bottom:1px solid rgba(26,58,92,.4);animation:fadein .4s;}
+.cmd-time{font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:2px;}
+.cmd-prompt{font-family:var(--mono);font-size:11px;color:var(--amber);margin-bottom:2px;}
+.cmd-out{font-family:var(--mono);font-size:10px;color:var(--text2);white-space:pre-wrap;margin-bottom:3px;opacity:.75;}
+.cmd-desc{font-family:var(--sans);font-size:11px;color:var(--text2);margin-bottom:3px;}
+.mitre{display:inline-block;font-family:var(--mono);font-size:9px;padding:1px 6px;background:rgba(179,136,255,.12);color:var(--purple);border:1px solid rgba(179,136,255,.3);border-radius:2px;}
+.profile-box{margin:10px 14px;background:rgba(0,212,170,.05);border:1px solid rgba(0,212,170,.2);border-radius:4px;padding:12px;animation:fadein .5s;}
+.profile-hd{font-family:var(--mono);font-size:10px;color:var(--teal);letter-spacing:1.5px;margin-bottom:10px;}
+.profile-row{display:flex;justify-content:space-between;margin-bottom:6px;}
+.profile-k{font-family:var(--mono);font-size:10px;color:var(--text3);}
+.profile-v{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--text);}
+.profile-v.crit{color:var(--red);}
+.tech-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
+
+/* Neutralization panel */
+.neu-panel{background:var(--panel);display:flex;flex-direction:column;overflow:hidden;}
+.neu-feed{flex:1;overflow-y:auto;}
+.neu-feed::-webkit-scrollbar{width:3px;}
+.neu-feed::-webkit-scrollbar-thumb{background:var(--border);}
+.neu-inactive{display:flex;flex-direction:column;align-items:center;justify-content:center;height:160px;gap:10px;}
+.neu-inactive-ring{width:52px;height:52px;border:2px dashed var(--border);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:20px;}
+.neu-inactive-txt{font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;line-height:1.8;}
+
+/* Neutralization phase header */
+.neu-phase{padding:10px 14px;background:rgba(198,255,0,.04);border-bottom:1px solid rgba(198,255,0,.15);border-top:1px solid rgba(198,255,0,.15);animation:fadein .4s;margin-top:4px;}
+.neu-phase-label{font-family:var(--mono);font-size:10px;color:var(--lime);letter-spacing:2px;margin-bottom:3px;}
+.neu-phase-title{font-family:var(--sans);font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;}
+.neu-phase-desc{font-family:var(--mono);font-size:9px;color:var(--text2);}
+
+/* Poison file */
+.poison-row{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid rgba(26,58,92,.3);animation:fadein .4s;}
+.poison-icon{font-size:14px;flex-shrink:0;}
+.poison-name{font-family:var(--mono);font-size:10px;color:var(--amber);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.poison-meta{font-family:var(--mono);font-size:9px;color:var(--text3);text-align:right;white-space:nowrap;}
+.poison-tag{font-size:9px;padding:1px 6px;border-radius:2px;background:rgba(255,179,0,.1);color:var(--amber);border:1px solid rgba(255,179,0,.3);white-space:nowrap;}
+
+/* Blocking rule */
+.rule-row{padding:7px 14px;border-bottom:1px solid rgba(26,58,92,.3);animation:fadein .4s;}
+.rule-tech{font-family:var(--mono);font-size:9px;color:var(--purple);margin-bottom:2px;}
+.rule-text{font-family:var(--mono);font-size:10px;color:var(--lime);}
+.rule-vector{font-family:var(--sans);font-size:10px;color:var(--text2);}
+
+/* Degradation bar */
+.deg-row{padding:7px 14px;border-bottom:1px solid rgba(26,58,92,.3);animation:fadein .4s;}
+.deg-msg{font-family:var(--mono);font-size:10px;color:var(--text2);margin-bottom:4px;}
+.deg-bar-wrap{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+.deg-bar-fill{height:100%;border-radius:2px;transition:width .6s;background:linear-gradient(90deg,var(--teal),var(--lime));}
+
+/* Victory card */
+.victory-card{margin:12px 14px;background:rgba(0,230,118,.06);border:1px solid rgba(0,230,118,.35);border-radius:6px;padding:14px;animation:fadein .6s;}
+.victory-title{font-family:var(--mono);font-size:11px;color:var(--green);letter-spacing:2px;margin-bottom:12px;text-align:center;}
+.victory-row{display:flex;justify-content:space-between;margin-bottom:6px;}
+.victory-k{font-family:var(--mono);font-size:10px;color:var(--text3);}
+.victory-v{font-family:var(--sans);font-size:12px;font-weight:700;color:var(--green);}
+.col-hdr{opacity:.4;border-bottom:1px solid var(--border);padding:3px 14px;flex-shrink:0;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark"></div>
+    <div><div class="logo-name">MORPHO-SHIELD</div><div class="logo-sub">Cybersécurité Hospitalière — Prototype v1.0</div></div>
+  </div>
+  <div class="header-right">
+    <div class="status-badge idle" id="badge">SYSTÈME INACTIF</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<div class="controls">
+  <button class="btn btn-primary" id="btn-start" onclick="startSim()">▶ Lancer la simulation</button>
+  <button class="btn btn-danger"  id="btn-atk"   onclick="doAttack()" disabled>⚡ Déclencher l'attaque</button>
+  <button class="btn btn-ghost"   onclick="doReset()">↺ Réinitialiser</button>
+  <div class="train-wrap">
+    <span class="train-label" id="train-lbl">BASELINE: EN ATTENTE</span>
+    <div class="train-bar"><div class="train-fill" id="train-fill"></div></div>
+  </div>
+</div>
+
+<div class="body">
+
+  <!-- Guide -->
+  <div class="guide-panel">
+    <div class="guide-title">DÉROULEMENT</div>
+
+    <div class="step active" id="step-1">
+      <div class="step-num">ÉTAPE 1 / 5</div>
+      <div class="step-title">Apprentissage</div>
+      <div class="step-desc">L'IA observe le trafic et construit la baseline du comportement normal.</div>
+      <div class="step-action">→ Barre de progression</div>
+    </div>
+    <div class="step pending" id="step-2">
+      <div class="step-num">ÉTAPE 2 / 5</div>
+      <div class="step-title">Attaque simulée</div>
+      <div class="step-desc">Reconnaissance → Intrusion → Exfiltration en 3 phases.</div>
+      <div class="step-action" id="step2-action">→ Attendez 100%</div>
+    </div>
+    <div class="step pending" id="step-3">
+      <div class="step-num">ÉTAPE 3 / 5</div>
+      <div class="step-title">Détection & Piège</div>
+      <div class="step-desc">Anomalie détectée. Système réel isolé. Honeypot activé. Attaquant piégé.</div>
+      <div class="step-action">→ Automatique</div>
+    </div>
+    <div class="step pending" id="step-4">
+      <div class="step-num">ÉTAPE 4 / 5</div>
+      <div class="step-title">Analyse</div>
+      <div class="step-desc">Chaque action loggée. Techniques MITRE identifiées. Profil construit.</div>
+      <div class="step-action">→ Panel HONEYPOT</div>
+    </div>
+    <div class="step pending" id="step-5">
+      <div class="step-num">ÉTAPE 5 / 5</div>
+      <div class="step-title">Neutralisation</div>
+      <div class="step-desc">Empoisonnement du leurre → Inoculation du système → Déconnexion silencieuse.</div>
+      <div class="step-action">→ Panel NEUTRALISATION</div>
+    </div>
+  </div>
+
+  <!-- Normal traffic -->
+  <div class="traffic-col">
+    <div class="panel-head">
+      <div class="panel-title"><div class="dot" id="dot-n"></div>TRAFIC NORMAL</div>
+      <div class="panel-count" id="cnt-n">0 paquets</div>
+    </div>
+    <div class="stat-bar">
+      <div class="stat-item"><div class="stat-lbl">Autorisés</div><div class="stat-val teal" id="sv-normal">0</div></div>
+      <div class="stat-item"><div class="stat-lbl">Score IA moy.</div><div class="stat-val teal" id="sv-score">—</div></div>
+    </div>
+    <div class="ev-row col-hdr">
+      <span style="font-size:9px;color:var(--text3)">PORT</span><span style="font-size:9px;color:var(--text3)">SOURCE</span>
+      <span style="font-size:9px;color:var(--text3)">DEST.</span><span style="font-size:9px;color:var(--text3)">OCTETS</span>
+      <span style="font-size:9px;color:var(--text3)">SCORE</span>
+    </div>
+    <div class="feed" id="feed-n"><div class="placeholder"><div style="font-size:20px;opacity:.3">◌</div>En attente...</div></div>
+  </div>
+
+  <!-- Attack traffic -->
+  <div class="traffic-col">
+    <div class="panel-head">
+      <div class="panel-title"><div class="dot" id="dot-a"></div>TRAFIC SUSPECT</div>
+      <div class="panel-count" id="cnt-a">0 paquets</div>
+    </div>
+    <div class="stat-bar">
+      <div class="stat-item"><div class="stat-lbl">Intrusions</div><div class="stat-val red" id="sv-atk">0</div></div>
+      <div class="stat-item"><div class="stat-lbl">Alertes IA</div><div class="stat-val amber" id="sv-alerts">0</div></div>
+    </div>
+    <div class="ev-row col-hdr">
+      <span style="font-size:9px;color:var(--text3)">PORT</span><span style="font-size:9px;color:var(--text3)">SOURCE</span>
+      <span style="font-size:9px;color:var(--text3)">DEST.</span><span style="font-size:9px;color:var(--text3)">OCTETS</span>
+      <span style="font-size:9px;color:var(--text3)">SCORE</span>
+    </div>
+    <div class="alert-strip" id="alert-strip">⚠ <span id="alert-txt"></span></div>
+    <div class="feed" id="feed-a"><div class="placeholder"><div style="font-size:20px;opacity:.3">◌</div>Aucune menace</div></div>
+  </div>
+
+  <!-- Honeypot panel -->
+  <div class="hp-panel">
+    <div class="panel-head">
+      <div class="panel-title"><div class="dot" id="dot-hp"></div>HONEYPOT</div>
+    </div>
+    <div class="stat-bar">
+      <div class="stat-item"><div class="stat-lbl">Commandes</div><div class="stat-val amber" id="sv-cmds">0</div></div>
+      <div class="stat-item"><div class="stat-lbl">MITRE</div><div class="stat-val purple" id="sv-mitre">0</div></div>
+    </div>
+    <div class="iso-bar" id="iso-bar">✓ SYSTÈME RÉEL ISOLÉ</div>
+    <div class="hp-feed" id="hp-feed">
+      <div class="hp-inactive">
+        <div class="hp-inactive-ring">⬡</div>
+        <div class="hp-inactive-txt">HONEYPOT INACTIF<br>En attente de<br>détection...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Neutralization panel -->
+  <div class="neu-panel">
+    <div class="panel-head">
+      <div class="panel-title"><div class="dot" id="dot-neu"></div>NEUTRALISATION AUTO</div>
+    </div>
+    <div class="stat-bar">
+      <div class="stat-item"><div class="stat-lbl">Règles déployées</div><div class="stat-val lime" id="sv-rules">0</div></div>
+      <div class="stat-item"><div class="stat-lbl">Leurres injectés</div><div class="stat-val lime" id="sv-poison">0</div></div>
+    </div>
+    <div class="neu-feed" id="neu-feed">
+      <div class="neu-inactive">
+        <div class="neu-inactive-ring">⊘</div>
+        <div class="neu-inactive-txt">NEUTRALISATION<br>INACTIVE<br>En attente du<br>profil attaquant...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const socket = io();
+let normalCount=0,atkCount=0,alertCount=0,mitreCount=0,cmdCount=0,rulesCount=0,poisonCount=0;
+let scores=[],trainSamples=0,MIN_SAMPLES=60,seenTech=new Set();
+
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('fr-FR');},1000);
+
+function setStatus(mode,txt){const b=document.getElementById('badge');b.className='status-badge '+mode;b.textContent=txt;}
+function setStep(n,mode='active'){
+  [1,2,3,4,5].forEach(i=>{
+    const el=document.getElementById('step-'+i);
+    if(i<n) el.className='step done';
+    else if(i===n) el.className='step '+mode;
+    else el.className='step pending';
+  });
+}
+function fmtBytes(b){return b>=1024?(b/1024).toFixed(1)+'k':b+'B';}
+function scoreHtml(sc,bad){
+  if(sc==null)return '<span class="score-pill na">—</span>';
+  return `<span class="score-pill ${bad?'bad':'ok'}">${sc.toFixed(3)}</span>`;
+}
+function addRow(feedId,html,cls){
+  const feed=document.getElementById(feedId);
+  const ph=feed.querySelector('.placeholder');if(ph)ph.remove();
+  const row=document.createElement('div');
+  row.className='ev-row'+(cls?' '+cls:'');row.innerHTML=html;
+  feed.insertBefore(row,feed.firstChild);
+  while(feed.children.length>120)feed.removeChild(feed.lastChild);
+}
+
+function startSim(){socket.emit('start_simulation');document.getElementById('btn-start').disabled=true;setStatus('running','SURVEILLANCE ACTIVE');document.getElementById('dot-n').className='dot green';setStep(1);}
+function doAttack(){if(!confirm('Lancer la simulation d\'attaque ?'))return;socket.emit('manual_attack');document.getElementById('btn-atk').disabled=true;setStep(2);}
+function doReset(){socket.emit('reset');}
+
+// ── Socket events ──────────────────────────────────────────────────────────
+
+socket.on('state_sync',data=>{
+  normalCount=data.normal_count||0;atkCount=data.attack_count||0;alertCount=(data.alerts||[]).length;
+  MIN_SAMPLES=data.detector_status?.min_samples||60;
+  document.getElementById('sv-normal').textContent=normalCount;
+  document.getElementById('sv-atk').textContent=atkCount;
+  document.getElementById('sv-alerts').textContent=alertCount;
+  if(data.running){document.getElementById('btn-start').disabled=true;setStatus('running','SURVEILLANCE ACTIVE');document.getElementById('dot-n').className='dot green';}
+  if(data.honeypot_active)activateHP();
+  if(data.system_isolated)document.getElementById('iso-bar').classList.add('show');
+  if(data.neutralization_active)activateNeu();
+  if(data.neutralization_complete){setStatus('neutralized','✓ NEUTRALISÉ');document.getElementById('dot-neu').className='dot done-green';}
+  data.alerts?.forEach(showAlert);
+  data.honeypot_logs?.forEach(addHPLog);
+  data.neutralization_logs?.forEach(handleNeuEvent);
+  if(data.attacker_profile)renderProfile(data.attacker_profile);
+});
+
+socket.on('network_event',ev=>{
+  normalCount++;trainSamples=Math.min(trainSamples+1,MIN_SAMPLES);
+  document.getElementById('sv-normal').textContent=normalCount;
+  document.getElementById('cnt-n').textContent=normalCount+' paquets';
+  const pct=Math.min(100,trainSamples/MIN_SAMPLES*100);
+  document.getElementById('train-fill').style.width=pct+'%';
+  if(pct>=100){document.getElementById('train-lbl').textContent='BASELINE: APPRISE ✓';document.getElementById('train-fill').style.background='var(--green)';}
+  else document.getElementById('train-lbl').textContent=`BASELINE: ${Math.round(pct)}%`;
+  if(ev.score!=null){scores.push(ev.score);if(scores.length>50)scores.shift();document.getElementById('sv-score').textContent=(scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(3);}
+  addRow('feed-n',`<span class="ev-port">:${ev.port}</span><span class="ev-src">${ev.src_name||ev.src}</span><span class="ev-dst">${ev.dst_name||ev.dst}</span><span class="ev-bytes">${fmtBytes(ev.bytes)}</span>${scoreHtml(ev.score,ev.anomaly)}`);
+});
+
+socket.on('baseline_ready',()=>{
+  document.getElementById('btn-atk').disabled=false;
+  document.getElementById('step2-action').textContent='→ Cliquez "Déclencher l\'attaque"';
+  document.getElementById('step-2').className='step active';
+  document.getElementById('step-1').className='step done';
+});
+
+socket.on('attack_phase',ev=>{
+  const feed=document.getElementById('feed-a');const ph=feed.querySelector('.placeholder');if(ph)ph.remove();
+  const strip=document.createElement('div');strip.className='phase-strip';
+  strip.textContent=`— ${ev.phase.toUpperCase()} — ${ev.description}`;
+  feed.insertBefore(strip,feed.firstChild);
+  setStatus('alert','⚠ INTRUSION DÉTECTÉE');document.getElementById('dot-a').className='dot red';setStep(2);
+});
+
+socket.on('attack_event',ev=>{
+  atkCount++;document.getElementById('sv-atk').textContent=atkCount;document.getElementById('cnt-a').textContent=atkCount+' paquets';
+  addRow('feed-a',`<span class="ev-port" style="color:var(--red)">:${ev.port}</span><span class="ev-src" style="color:var(--red)">${ev.src_name||ev.src}</span><span class="ev-dst">${ev.dst_name||ev.dst}</span><span class="ev-bytes">${fmtBytes(ev.bytes)}</span>${scoreHtml(ev.score,ev.anomaly)}`,'atk');
+});
+
+socket.on('honeypot_traffic',ev=>{
+  atkCount++;document.getElementById('sv-atk').textContent=atkCount;
+  addRow('feed-a',`<span class="ev-port" style="color:var(--amber)">:${ev.port}</span><span class="ev-src" style="color:var(--amber)">${ev.src_name||ev.src}</span><span class="ev-dst" style="color:var(--amber)">${ev.dst_name||ev.dst}</span><span class="ev-bytes">${fmtBytes(ev.bytes)}</span><span class="score-pill hp-tag">LEURRE</span>`,'hp');
+});
+
+socket.on('attack_incoming',()=>{setStatus('alert','⚠ INTRUSION DÉTECTÉE');document.getElementById('dot-a').className='dot red';});
+socket.on('alert',showAlert);
+function showAlert(a){alertCount++;document.getElementById('sv-alerts').textContent=alertCount;document.getElementById('alert-strip').classList.add('show');document.getElementById('alert-txt').textContent=a.message;setStep(3);}
+socket.on('system_isolated',()=>{document.getElementById('iso-bar').classList.add('show');setStatus('trapped','LEURRE ACTIF');});
+socket.on('honeypot_activated',activateHP);
+function activateHP(){document.getElementById('dot-hp').className='dot amber';setStatus('trapped','LEURRE ACTIF');const f=document.getElementById('hp-feed');const i=f.querySelector('.hp-inactive');if(i)i.remove();setStep(3);}
+socket.on('honeypot_log',addHPLog);
+function addHPLog(log){
+  cmdCount++;document.getElementById('sv-cmds').textContent=cmdCount;
+  let mHtml='';
+  if(log.mitre){if(!seenTech.has(log.mitre.id)){seenTech.add(log.mitre.id);mitreCount++;document.getElementById('sv-mitre').textContent=mitreCount;}mHtml=`<span class="mitre">${log.mitre.id} — ${log.mitre.name}</span>`;}
+  const el=document.createElement('div');el.className='cmd-block';
+  el.innerHTML=`<div class="cmd-time">${log.timestamp}</div><div class="cmd-prompt">attacker@honeypot:~$ ${log.command}</div><div class="cmd-out">${log.output||''}</div><div class="cmd-desc">${log.description}</div>${mHtml}`;
+  const f=document.getElementById('hp-feed');f.appendChild(el);f.scrollTop=f.scrollHeight;setStep(4);
+}
+socket.on('attacker_profile',renderProfile);
+function renderProfile(data){
+  const p=data.profile||{};const t=data.techniques||[];
+  const box=document.createElement('div');box.className='profile-box';
+  box.innerHTML=`<div class="profile-hd">PROFIL ATTAQUANT ÉTABLI</div><div class="profile-row"><span class="profile-k">Motivation</span><span class="profile-v">${p.motivation||'—'}</span></div><div class="profile-row"><span class="profile-k">Sophistication</span><span class="profile-v">${p.sophistication||'—'}</span></div><div class="profile-row"><span class="profile-k">Risque</span><span class="profile-v crit">${p.risk_level||'—'}</span></div><div class="tech-list">${t.map(x=>`<span class="mitre">${x.id}</span>`).join('')}</div>`;
+  const f=document.getElementById('hp-feed');f.appendChild(box);f.scrollTop=99999;
+}
+
+// ── Neutralization events ──────────────────────────────────────────────────
+
+socket.on('neutralization_phase', handleNeuEvent);
+socket.on('poison_file',          handleNeuEvent);
+socket.on('blocking_rule',        handleNeuEvent);
+socket.on('rules_deployed',       handleNeuEvent);
+socket.on('degradation_step',     handleNeuEvent);
+socket.on('neutralization_complete', handleNeuEvent);
+
+function activateNeu(){
+  document.getElementById('dot-neu').className='dot lime';
+  setStatus('neutralizing','⚙ NEUTRALISATION EN COURS');
+  const f=document.getElementById('neu-feed');
+  const i=f.querySelector('.neu-inactive');if(i)i.remove();
+  setStep(5,'neutralizing');
+}
+
+function handleNeuEvent(ev){
+  const feed=document.getElementById('neu-feed');
+  const ph=feed.querySelector('.neu-inactive');if(ph)ph.remove();
+
+  if(ev.type==='neutralization_phase'){
+    activateNeu();
+    const el=document.createElement('div');el.className='neu-phase';
+    el.innerHTML=`<div class="neu-phase-label">${ev.phase} — ${ev.title}</div><div class="neu-phase-desc">${ev.description}</div>`;
+    feed.appendChild(el);
+
+  } else if(ev.type==='poison_file'){
+    poisonCount++;document.getElementById('sv-poison').textContent=poisonCount;
+    const el=document.createElement('div');el.className='poison-row';
+    el.innerHTML=`<span class="poison-icon">⚠</span><span class="poison-name">${ev.name}</span><span class="poison-meta">${ev.size}</span><span class="poison-tag">LEURRE</span>`;
+    feed.appendChild(el);
+
+  } else if(ev.type==='blocking_rule'){
+    rulesCount++;document.getElementById('sv-rules').textContent=rulesCount;
+    const el=document.createElement('div');el.className='rule-row';
+    el.innerHTML=`<div class="rule-tech">${ev.technique} — ${ev.vector}</div><div class="rule-text">✓ ${ev.rule}</div>`;
+    feed.appendChild(el);
+
+  } else if(ev.type==='rules_deployed'){
+    const el=document.createElement('div');el.className='neu-phase';
+    el.innerHTML=`<div class="neu-phase-label" style="color:var(--green)">✓ ${ev.message}</div>`;
+    feed.appendChild(el);
+
+  } else if(ev.type==='degradation_step'){
+    const el=document.createElement('div');el.className='deg-row';
+    el.innerHTML=`<div class="deg-msg">↓ ${ev.message}</div><div class="deg-bar-wrap"><div class="deg-bar-fill" style="width:${ev.level}%"></div></div>`;
+    feed.appendChild(el);
+
+  } else if(ev.type==='neutralization_complete'){
+    setStatus('neutralized','✓ ATTAQUANT NEUTRALISÉ');
+    document.getElementById('dot-neu').className='dot done-green';
+    setStep(5,'neutralized');
+    const card=document.createElement('div');card.className='victory-card';
+    card.innerHTML=`
+      <div class="victory-title">✓ NEUTRALISATION COMPLÈTE</div>
+      <div class="victory-row"><span class="victory-k">Règles déployées</span><span class="victory-v">${ev.rules_count}</span></div>
+      <div class="victory-row"><span class="victory-k">Fichiers leurres injectés</span><span class="victory-v">${ev.poison_files}</span></div>
+      <div class="victory-row"><span class="victory-k">Données compromises</span><span class="victory-v">0</span></div>
+      <div class="victory-row"><span class="victory-k">Attaquant averti</span><span class="victory-v">NON</span></div>
+      <div class="victory-row"><span class="victory-k">Statut système réel</span><span class="victory-v">OPÉRATIONNEL</span></div>
+    `;
+    feed.appendChild(card);
+  }
+  feed.scrollTop=feed.scrollHeight;
+}
+
+socket.on('reset_done',()=>location.reload());
+</script>
+</body>
+</html>
